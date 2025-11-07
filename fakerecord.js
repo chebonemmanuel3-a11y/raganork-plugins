@@ -30,15 +30,15 @@ Module(
 
 Module(
   { onMessage: true },
-  async (message, client) => {
+  async (message) => {
     if (!fakeRecordingEnabled) return;
     if (message.text && !message.text.startsWith(".")) {
-      // Trigger WhatsApp "recording" presence
-      await client.sendPresenceUpdate("recording", message.jid);
+      // Trigger fake recording indicator
+      await message.client.sendPresenceUpdate("recording", message.jid);
 
       // Hold for 10 seconds
       setTimeout(async () => {
-        await client.sendPresenceUpdate("paused", message.jid);
+        await message.client.sendPresenceUpdate("paused", message.jid);
       }, 10000);
     }
   }
