@@ -6,16 +6,21 @@ const isFromMe = botConfig.MODE === "public" ? false : true;
 // Cleanup function
 function cleanup() {
   try {
+    // Clear require cache
     Object.keys(require.cache).forEach(key => delete require.cache[key]);
+    // Reset global caches if you use them
+    if (global.myCache) global.myCache = {};
+    if (global.tempStore) global.tempStore = {};
+    // Trigger garbage collection
     if (global.gc) global.gc();
   } catch (err) {
-    // ignore errors silently
+    // ignore silently
   }
 }
 
-// Schedule auto cleanup every 10 minutes (600000 ms)
+// Auto cleanup every 10 minutes (silent)
 setInterval(() => {
-  cleanup(); // silent run, no message
+  cleanup();
 }, 600000);
 
 Module({
@@ -25,12 +30,17 @@ Module({
   type: 'system'
 }, async (message) => {
   try {
-    const before = process.memoryUsage().heapUsed / 1024 / 1024;
+    const before = process.memoryUsage();
     cleanup();
-    const after = process.memoryUsage().heapUsed / 1024 / 1024;
+    const after = process.memoryUsage();
+
+    const format = (mem) => (mem / 1024 / 1024).toFixed(2);
 
     await message.sendReply(
-      `🧹 RAM cleanup done!\nBefore: ${before.toFixed(2)} MB\nAfter: ${after.toFixed(2)} MB`
+      `🧹 RAM cleanup done!\n` +
+      `Heap: ${format(before.heapUsed)} MB → ${format(after.heapUsed)} MB\n` +
+      `RSS: ${format(before.rss)} MB → ${format(after.rss)} MB\n` +
+      `External: ${format(before.external)} MB → ${format(after.external)} MB`
     );
   } catch (err) {
     await message.sendReply('⚠️ Could not free memory. Start Node.js with --expose-gc.');
