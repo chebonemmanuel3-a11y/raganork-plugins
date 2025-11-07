@@ -1,45 +1,125 @@
-const { Module } = require("../main");
-const axios = require("axios");
+const { Module } = require('../main');
+const axios = require('axios');
+const botConfig = require("../config");
+const isFromMe = botConfig.MODE === "public" ? false : true;
 
-Module(
-  { pattern: "get ?(.*)", isPrivate: false, desc: "Fetch Spotify track by link", type: "utility" },
-  async (message, match) => {
-    const query = match[1];
-    if (!query) return await message.reply("❌ Please provide a Spotify track link.");
+let pendingSpotify = {};
 
+Module({
+    pattern: 'get ?(.*)',
+    fromMe: isFromMe,
+    desc: 'Fetch Spotify songs as .xlsx document',
+    type: 'downloader'
+}, async (message, match) => {
+    let query = match[1]?.trim();
+
+    if (!query && message.reply_message) {
+        query = message.reply_message.text?.trim();
+    }
+
+    if (!query) return await message.sendReply('_Give me a song name or Spotify URL!_');
+
+    // Handle direct Spotify track link
+    if (query.startsWith('http') && query.includes('spotify.com/track/')) {
+        try {
+            const waitMsg = await message.sendReply('⬇️ Fetching track info...');
+            const res = await axios.get(`https://jerrycoder.oggyapi.workers.dev/dspotify?url=${encodeURIComponent(query)}`);
+
+            if (!res.data.status || !res.data.download_link) {
+                return await message.edit('_Failed to get download link!_', message.jid, waitMsg.key);
+            }
+
+            const track = res.data;
+            await message.edit(`⬇️ Downloading: *${track.title}* - ${track.artist}`, message.jid, waitMsg.key);
+
+            const response = await axios.get(track.download_link, { responseType: 'stream' });
+
+            await message.sendMessage(
+                { stream: response.data },
+                "document",
+                {
+                    mimetype: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    quoted: message.data,
+                    fileName: `${track.title} - ${track.artist}.xlsx`
+                }
+            );
+
+            await message.edit(`✅ Success: *${track.title}* - ${track.artist}`, message.jid, waitMsg.key);
+
+        } catch (err) {
+            console.error(err);
+            return await message.sendReply('_Error downloading track!_');
+        }
+        return;
+    }
+
+    // Handle search queries
     try {
-      // If input looks like a Spotify track link
-      if (query.includes("spotify.com/track")) {
-        const res = await axios.get(
-          `https://jerrycoder.oggyapi.workers.dev/dspotify?url=${encodeURIComponent(query)}`
-        );
+        const waitMsg = await message.sendReply(`_Searching for:_ *${query}*`);
 
-        if (!res.data || !res.data.downloadUrl) {
-          return await message.reply("❌ Failed to get download link from Spotify.");
+        const res = await axios.get(`https://jerrycoder.oggyapi.workers.dev/spotify?search=${encodeURIComponent(query)}`);
+        if (!res.data.tracks || res.data.tracks.length === 0) {
+            return await message.edit('_No tracks found!_', message.jid, waitMsg.key);
         }
 
-        const title = res.data.title || "spotify_track";
-        const downloadUrl = res.data.downloadUrl;
+        const results = res.data.tracks.slice(0, 8);
+        let list = results.map((t, i) =>
+            `*${i + 1}. ${t.trackName}*\n_by ${t.artist} • ${t.durationMs}_`
+        ).join("\n\n");
 
-        // Download MP3
-        const audioRes = await axios.get(downloadUrl, { responseType: "arraybuffer" });
-        const audioBuffer = Buffer.from(audioRes.data, "binary");
+        await message.edit(
+            `🎵 *Search results for:* _"${query}"_\n\n${list}\n\n_Reply with a number (1–${results.length}) to download_`,
+            message.jid,
+            waitMsg.key
+        );
 
-        // Send as document with .xlsx extension
-        await message.client.sendMessage(message.jid, {
-          document: audioBuffer,
-          mimetype: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          fileName: `${title}.xlsx`
-        });
+        pendingSpotify[message.sender] = { key: waitMsg.key, results };
 
-        return await message.reply(`✅ Sent ${title} as .xlsx (rename to .mp3 to play).`);
-      }
-
-      // If not a link, fallback
-      return await message.reply("⚡ Please send a valid Spotify track link.");
-    } catch (e) {
-      console.error("Get command failed:", e);
-      await message.reply("❌ Error fetching song.");
+    } catch (err) {
+        console.error(err);
+        return await message.sendReply('_Error fetching search results!_');
     }
-  }
-);
+});
+
+Module({
+    on: 'text',
+    fromMe: false
+}, async (message) => {
+    const userState = pendingSpotify[message.sender];
+    if (!userState) return;
+
+    const selected = parseInt(message.message.trim());
+    if (isNaN(selected) || selected < 1 || selected > userState.results.length) return;
+
+    const track = userState.results[selected - 1];
+    delete pendingSpotify[message.sender];
+
+    try {
+        await message.edit(`⬇️ Downloading: *${track.trackName}* - ${track.artist}`, message.jid, userState.key);
+
+        const res = await axios.get(`https://jerrycoder.oggyapi.workers.dev/dspotify?url=${encodeURIComponent(track.spotifyUrl)}`);
+
+        if (!res.data.status || !res.data.download_link) {
+            return await message.edit('_Failed to fetch download link!_', message.jid, userState.key);
+        }
+
+        const dl = res.data;
+        const response = await axios.get(dl.download_link, { responseType: 'stream' });
+
+        await message.sendMessage(
+            { stream: response.data },
+            "document",
+            {
+                mimetype: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                quoted: message.data,
+                fileName: `${dl.title} - ${dl.artist}.xlsx`
+            }
+        );
+
+        await message.edit(`✅ Success: *${dl.title}* - ${dl.artist}`, message.jid, userState.key);
+
+    } catch (err) {
+        console.error(err);
+        await message.edit('_Error downloading!_', message.jid, userState.key);
+    }
+});
