@@ -1,0 +1,142 @@
+const { Module } = require("../main");
+
+const truths = [
+  "What is your biggest fear?",
+  "Have you ever lied to get out of trouble?",
+  "What is the most embarrassing thing you’ve done?",
+  "Who was your first crush?",
+  "What’s the funniest thing you’ve ever said or done?",
+  "If you could only eat one food forever, what would it be?",
+  "What’s the most embarrassing nickname you’ve had?",
+  "Which movie can you watch over and over?",
+  "What’s one secret you’ve never told anyone before?",
+  "Have you ever lied to a best friend?",
+  "Who in this group do you trust the most?",
+  "What’s your biggest regret?",
+  "What’s the strangest dream you’ve had?",
+  "If you could swap lives with someone for a day, who would it be?",
+  "What’s the worst excuse you’ve ever used?",
+  "Have you ever cheated in a game?",
+  "What’s the silliest thing you believed as a child?",
+  "Who was your first crush?",
+  "What’s the most awkward moment you’ve had in public?",
+  "Have you ever laughed at the wrong moment?",
+  "What’s the longest you’ve gone without sleep?",
+  "What’s the weirdest food you’ve tried?",
+  "Who do you text the most?",
+  "What’s the most embarrassing song on your playlist?",
+  "Have you ever pretended to be sick to skip school/work?",
+  "What’s the most useless talent you have?",
+  "Who would you call if you were in trouble at 3 AM?",
+  "What’s the most expensive thing you’ve broken?",
+  "Have you ever forgotten someone’s name right after meeting them?",
+  "What’s the most childish thing you still do?",
+  "Who in this group makes you laugh the most?",
+  "What’s the worst fashion choice you’ve made?",
+  "Have you ever sent a message to the wrong person?",
+  "What’s the most embarrassing photo of you?",
+  "What’s your guilty pleasure TV show?",
+  "Have you ever fallen asleep in class or at work?",
+  "What’s the weirdest nickname you’ve been given?",
+  "Who was your childhood hero?",
+  "What’s the most awkward compliment you’ve received?",
+  "Have you ever been caught talking to yourself?",
+  "What’s the most random fact you know?",
+  "Who in this group would survive a zombie apocalypse?",
+  "What’s the worst lie you’ve told?",
+  "Have you ever laughed so hard you cried?",
+  "What’s the strangest thing you’ve collected?",
+  "Who’s the most stubborn person you know?",
+  "What’s the weirdest dream job you’ve imagined?",
+  "Have you ever embarrassed yourself on social media?",
+  "What’s the most awkward text you’ve sent?",
+  "Who in this group would you prank first?",
+  "What’s the most unusual fear you have?",
+  "Have you ever forgotten an important date?",
+  "What’s the funniest rumor you’ve heard about yourself?",
+  "Who in this group would you trust with a secret?"
+  // add more here
+];
+
+const dares = [
+  "Send a funny selfie to the group.",
+  "Speak in emojis for the next 5 messages.",
+  "Sing a song and send a voice note.",
+  "Send a funny selfie to the group.",
+  "Speak only in emojis for the next 5 messages.",
+  "Do your best celebrity impression.",
+  "Narrate the chat like a newsreader for the next round.",
+  "Play air guitar for 2 minutes straight.",
+  "Howl like a wolf for two minutes.",
+  "Dance without music for two minutes.",
+  "Change your profile picture to something silly for 24 hours.",
+  "Send the last photo you took with your phone.",
+  "Record yourself saying a tongue twister three times fast.",
+  "Pretend to be a robot for the next 3 messages.",
+  "Share the funniest meme in your gallery.",
+  "Speak in rhyme until your next turn.",
+  "Send a GIF that describes your mood.",
+  "Pretend you’re a teacher and scold the group.",
+  "Type with your nose for one message.",
+  "Share the oldest photo in your phone.",
+  "Pretend you’re a news anchor reporting breaking news.",
+  "Send a voice note of you singing a nursery rhyme.",
+  "Pretend you’re a chef and describe a weird recipe.",
+  "Share a random fun fact.",
+  "Pretend you’re a superhero and announce your powers.",
+  "Send a sticker that matches your mood.",
+  "Pretend you’re a sports commentator for the next message.",
+  "Share a joke that makes you laugh.",
+  "Pretend you’re a DJ and announce a song.",
+  "Send a random emoji and explain why it represents you.",
+  "Pretend you’re a movie trailer voice.",
+  "Share a random screenshot from your phone.",
+  "Pretend you’re a weather reporter.",
+  "Send a voice note of you laughing dramatically.",
+  "Pretend you’re a magician and announce a trick.",
+  "Share a random quote you like.",
+  "Pretend you’re a famous celebrity giving a speech.",
+  "Send a random emoji story (at least 5 emojis).",
+  "Pretend you’re a coach motivating your team.",
+  "Share a random song lyric.",
+  "Pretend you’re a detective solving a case.",
+  "Send a random doodle or drawing.",
+  "Pretend you’re a poet and write 2 lines.",
+  "Share a random fun selfie filter.",
+  "Pretend you’re a pilot making an announcement.",
+  "Send a random voice note in a funny accent.",
+  "Pretend you’re a gamer streaming live.",
+  "Share a random childhood memory.",
+  "Pretend you’re a scientist announcing a discovery.",
+  "Send a random emoji combo that makes no sense.",
+  "Pretend you’re a motivational speaker.",
+  "Share a random embarrassing story.",
+  "Pretend you’re a radio host introducing a song."
+  // add more here
+];
+
+Module(
+  {
+    pattern: "truth",
+    isPrivate: false,
+    desc: "Play Truth",
+    type: "fun",
+  },
+  async (message) => {
+    const challenge = truths[Math.floor(Math.random() * truths.length)];
+    await message.reply(` Truth:\n${challenge}`);
+  }
+);
+
+Module(
+  {
+    pattern: "dare",
+    isPrivate: false,
+    desc: "Play Dare",
+    type: "fun",
+  },
+  async (message) => {
+    const challenge = dares[Math.floor(Math.random() * dares.length)];
+    await message.reply(` Dare:\n${challenge}`);
+  }
+);
