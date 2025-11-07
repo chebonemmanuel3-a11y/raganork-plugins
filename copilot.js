@@ -15,10 +15,15 @@ Module(
     }
 
     try {
-      // Replace with your AI API endpoint + key
-      const response = await axios.post("https://api.example.com/copilot", {
-        prompt,
-      });
+      const response = await axios.post(
+        "https://api.example.com/copilot", // replace with actual endpoint
+        { prompt },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.COPILOT_API_KEY}`,
+          },
+        }
+      );
 
       const reply = response.data?.reply || "No response from Copilot.";
       await message.reply(reply);
