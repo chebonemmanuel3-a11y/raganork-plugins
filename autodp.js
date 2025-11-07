@@ -1,7 +1,7 @@
 const { Module } = require("../main");
 const axios = require("axios");
 
-// Replace with your Pexels API key (get one free at https://www.pexels.com/api/)
+// 🔑 Replace with your free Pexels API key from https://www.pexels.com/api/
 const PEXELS_API_KEY = "8ThxsNY77ksUID32bMuFYSiZOMK3GEE7mukzeMgTA5cgvNO20ERZCHOx";
 
 let autoDpEnabled = false;
@@ -11,9 +11,10 @@ let currentCategory = "nature";
 async function fetchImage(category) {
   try {
     // Search Pexels for category images
-    const res = await axios.get(`https://api.pexels.com/v1/search?query=${category}&per_page=1&page=${Math.floor(Math.random() * 100)}`, {
-      headers: { Authorization: PEXELS_API_KEY }
-    });
+    const res = await axios.get(
+      `https://api.pexels.com/v1/search?query=${category}&per_page=1&page=${Math.floor(Math.random() * 100)}`,
+      { headers: { Authorization: PEXELS_API_KEY } }
+    );
 
     if (!res.data.photos || res.data.photos.length === 0) {
       throw new Error("No images found for category: " + category);
@@ -32,7 +33,7 @@ async function setDp(client, category) {
   try {
     const imgBuffer = await fetchImage(category);
     await client.updateProfilePicture(client.user.id, imgBuffer);
-    console.log(`DP updated with ${category} image`);
+    console.log(`✅ DP updated with ${category} image`);
   } catch (e) {
     console.error("DP update failed:", e);
   }
