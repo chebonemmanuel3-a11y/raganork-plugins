@@ -11,7 +11,7 @@ Module(
   async (message, match) => {
     const prompt = match[1]?.trim();
     if (!prompt) {
-      return await message.reply("Please provide a question.");
+      return await message.reply("Please provide a fuckin question question.");
     }
 
     try {
