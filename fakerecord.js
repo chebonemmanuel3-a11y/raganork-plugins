@@ -1,6 +1,6 @@
 const { Module } = require("../main");
 
-let fakeRecordingEnabled = true; // default ON
+let fakeRecordingEnabled = true;
 
 Module(
   {
@@ -11,7 +11,7 @@ Module(
   },
   async (message) => {
     fakeRecordingEnabled = true;
-    await message.reply("🎤 Fake recording is now ENABLED.");
+    await message.reply("🎤 Fake recording ENABLED.");
   }
 );
 
@@ -24,24 +24,21 @@ Module(
   },
   async (message) => {
     fakeRecordingEnabled = false;
-    await message.reply("🔇 Fake recording is now DISABLED.");
+    await message.reply("🔇 Fake recording DISABLED.");
   }
 );
 
 Module(
-  {
-    onMessage: true, // listens to all messages
-  },
-  async (message) => {
+  { onMessage: true },
+  async (message, client) => {
     if (!fakeRecordingEnabled) return;
-
-    // Ignore commands (starting with .)
     if (message.text && !message.text.startsWith(".")) {
-      // Simulate recording indicator
-      const fake = await message.reply("🎤 Recording voice note...");
+      // Trigger WhatsApp "recording" presence
+      await client.sendPresenceUpdate("recording", message.jid);
 
+      // Hold for 10 seconds
       setTimeout(async () => {
-        await message.reply("✅ Finished recording (fake)");
+        await client.sendPresenceUpdate("paused", message.jid);
       }, 10000);
     }
   }
