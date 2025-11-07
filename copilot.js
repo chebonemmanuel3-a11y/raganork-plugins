@@ -1,6 +1,26 @@
 const { Module } = require("../main");
 const axios = require("axios");
 
+// Temporary in-memory storage (better to use a database or config file)
+let apiKey = null;
+
+Module(
+  {
+    pattern: "setkey ?(.*)",
+    isPrivate: true,
+    desc: "Set your Copilot API key",
+    type: "config",
+  },
+  async (message, match) => {
+    const key = match[1]?.trim();
+    if (!key) {
+      return await message.reply("Please provide an API key after the command.");
+    }
+    apiKey = key;
+    await message.reply("✅ Copilot API key has been set successfully.");
+  }
+);
+
 Module(
   {
     pattern: "copilot ?(.*)",
@@ -11,7 +31,10 @@ Module(
   async (message, match) => {
     const prompt = match[1]?.trim();
     if (!prompt) {
-      return await message.reply("Please provide a fuckin question question.");
+      return await message.reply("Please provide a question.");
+    }
+    if (!apiKey) {
+      return await message.reply("❌ No API key set. Use `.setkey YOUR_KEY` first.");
     }
 
     try {
@@ -20,7 +43,7 @@ Module(
         { prompt },
         {
           headers: {
-            Authorization: "Bearer ck_pub_fe68525d4b4d0ddd9579e39c34e4a9e3", // pasted directly
+            Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
         }
