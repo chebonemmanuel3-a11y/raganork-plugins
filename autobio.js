@@ -1,40 +1,57 @@
-const { Module } = require("../main");
-const axios = require("axios");
+// autobio.js — Auto Bio plugin for Raganork-MD
+// Fetches random cool bios/quotes from the internet and updates WhatsApp "About" automatically.
 
-let autoBioEnabled = false;
-let intervalId = null;
+let { Module } = require('../main')
+const axios = require('axios')
 
-async function fetchBio() {
-  // Example: cycle through multiple sources
-  const sources = [
-    "https://picsart.com/blog/whatsapp-bio-ideas/",
-    "https://www.wikihow.com/WhatsApp-Bio-Ideas",
-    "https://www.fotor.com/blog/whatsapp-bio-ideas/",
-    "https://simplified.com/blog/ai-writing/whatsapp-bio-ideas",
-    "https://www.haulpack.com/blog/top-150-whatsapp-bio-ideas-caption"
-  ];
+const INTERVAL_MS = 1000 * 60 * 10 // change every 10 minutes
+const QUOTE_API = 'https://api.quotable.io/random' // free quote API
 
-  const randomSource = sources[Math.floor(Math.random() * sources.length)];
-  const res = await axios.get(randomSource);
-  const text = res.data;
+let enabled = false
+let interval = null
 
-  // Simple regex to extract lines (you can refine this)
-  const bios = text.match(/.{20,80}/g); 
-  return bios[Math.floor(Math.random() * bios.length)];
-}
+Module({ on: "text", fromMe: false }, async (m) => {
+  const body = (m.message || "").toLowerCase().trim()
 
-async function updateBio(client) {
-  const newBio = await fetchBio();
-  await client.updateProfileStatus(newBio);
-}
+  // ✅ Turn ON
+  if (body === ".autobio on") {
+    if (enabled) return await m.send("_Auto Bio already running._")
+    enabled = true
 
-Module(
-  { pattern: "autobio on", isPrivate: false, desc: "Enable auto bio", type: "utility" },
-  async (message) => {
-    if (autoBioEnabled) return await message.reply("⚡ Auto bio already running.");
-    autoBioEnabled = true;
-    intervalId = setInterval(() => updateBio(message.client), 1 * 60 * 1000);
-    await updateBio(message.client);
+    const updateBio = async () => {
+      try {
+        const res = await axios.get(QUOTE_API)
+        const { content, author } = res.data
+        const newBio = `${content} — ${author}`.slice(0, 139) // WhatsApp bio limit: 139 chars
+
+        // Update WhatsApp "About"
+        if (m.client && typeof m.client.updateProfileStatus === "function") {
+          await m.client.updateProfileStatus(newBio)
+          console.log(`[autobio] Updated bio -> ${newBio}`)
+        } else {
+          console.warn("[autobio] updateProfileStatus not available")
+        }
+      } catch (err) {
+        console.error("[autobio] Error fetching bio:", err.message)
+      }
+    }
+
+    // Run once immediately, then repeat
+    await updateBio()
+    interval = setInterval(updateBio, INTERVAL_MS)
+    await m.send("_✅ Auto Bio started — fetching new cool bios every 10 min._")
+    return
+  }
+
+  // 🛑 Turn OFF
+  if (body === ".autobio off") {
+    if (!enabled) return await m.send("_Auto Bio not active._")
+    enabled = false
+    clearInterval(interval)
+    await m.send("_🛑 Auto Bio stopped._")
+    return
+  }
+})    await updateBio(message.client);
     await message.reply("✅ Auto bio ENABLED. Updates every 10 minutes.");
   }
 );
