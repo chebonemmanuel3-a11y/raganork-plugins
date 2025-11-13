@@ -1,110 +1,102 @@
-// autodp.js — Auto Display Picture (Profile Picture) Updater
+// dp_manager_light.js — Two-step Profile Picture Management (NO JIMP)
 
 const { Module } = require('../main');
 const axios = require('axios');
-const Jimp = require('Jimp'); // Ensure JIMP is correctly capitalized or lowercase based on your npm install
-const fs = require('fs').promises;
+const fs = require('fs');
+const path = require('path');
+const { createReadStream } = require('fs');
+const { fetchBuffer } = require('../lib/functions'); // Utility to fetch media buffer
 
-// --- Configuration and State ---
-const INTERVAL_MS = 1000 * 60 * 2; // Fixed to 2 minutes (1000ms * 60s * 2min)
-const IMAGE_API = 'https://picsum.photos/720/720'; 
+// --- Constants & Configuration ---
+// We'll save the raw downloaded file here
+const DP_FILE_PATH = path.join(__dirname, 'pending_dp_image.jpg'); 
+const BRANDING = "\n\n— powered by gemini & Emmanuel";
 
-let autoDpEnabled = false;
-let intervalId = null;
-const BRANDING = "\n\n— powered by gemini & Emmanuel"; 
+// --- 1. Command: .getdp (Download & Save Image) ---
+Module({
+    pattern: 'getdp ?(.*)',
+    fromMe: true,
+    desc: 'Downloads an image (from reply or URL) and saves it locally for DP update.',
+    type: 'utility'
+}, async (message, match) => {
+    
+    let imageUrl = match[1]?.trim();
+    let mediaBuffer = null;
 
-// --- Core Logic Function ---
-const updateDP = async (client) => {
+    // --- 1. Find Image Source ---
+    if (message.quoted && (message.quoted.image || message.quoted.mimetype?.startsWith('image'))) {
+        mediaBuffer = await fetchBuffer(message.quoted);
+    } else if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('https'))) {
+        try {
+            // Download the image buffer directly
+            const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+            mediaBuffer = Buffer.from(response.data);
+        } catch (e) {
+            return await message.sendReply("❌ Failed to download image from the provided URL.");
+        }
+    } else {
+        return await message.sendReply("❌ Please reply to an image or provide a valid image URL to download.");
+    }
+
+    if (!mediaBuffer) {
+        return await message.sendReply("❌ Could not retrieve image data.");
+    }
+
     try {
-        if (!client) {
-            console.warn("[autodp] updateDP called without client object. Skipping update.");
-            return;
-        }
+        await message.sendReply("⬇️ Image downloaded. Saving file locally...");
 
-        console.log("[autodp] Attempting to fetch new DP...");
+        // --- 2. Save the Image ---
+        await fs.promises.writeFile(DP_FILE_PATH, mediaBuffer);
+        
+        // Send success message with next step
+        return await message.sendReply(`✅ Image prepared and saved successfully on the server.\n\n*Next Step:* Use the command *.setdp* to set it as the profile picture.`);
 
-        // 1. Fetch a random image
-        const imageResponse = await axios.get(IMAGE_API, { responseType: 'arraybuffer' });
-        const imageBuffer = Buffer.from(imageResponse.data);
-
-        // 2. Process the image with Jimp
-        const image = await Jimp.read(imageBuffer);
-        image.cover(720, 720); // Resize and crop to 720x720 square
-        const processedImageBuffer = await image.getBufferAsync(Jimp.MIME_JPEG);
-
-        // 3. Update WhatsApp Profile Picture
-        if (typeof client.updateProfilePicture === "function") {
-            // CRITICAL FIX: The error is caused by missing the JID. 
-            // We pass the bot's JID and the processed image buffer.
-            const botJID = client.user.id || client.user.jid; 
-            
-            if (!botJID) {
-                console.error("[autodp] Could not find bot's JID to set profile picture.");
-                return;
-            }
-
-            await client.updateProfilePicture(botJID, processedImageBuffer); 
-            
-            console.log(`[autodp] Successfully updated DP for ${botJID.split('@')[0]}`);
-        } else {
-            console.warn("[autodp] updateProfilePicture not available on client.");
-        }
-
-    } catch (err) {
-        // Log the full error, but suppress the 'stream' error if it's the JID issue
-        if (err.message && err.message.includes("'stream' in undefined")) {
-            console.error("[autodp] Error updating DP: JID or image buffer format likely incorrect. Retrying on next interval.");
-        } else {
-            console.error("[autodp] General Error in updating DP:", err);
-        }
+    } catch (e) {
+        console.error("Error saving DP file:", e);
+        return await message.sendReply("❌ Error saving the image file locally.");
     }
-};
-
-
-// --- 1. Start Command (.autodp on) ---
-Module({ 
-    pattern: "autodp on", 
-    fromMe: true, 
-    desc: "Enable auto DP updates (every 2 min)", 
-    type: "utility" 
-}, async (message) => {
-    if (autoDpEnabled) {
-        return await message.sendReply("_Auto DP already running._")
-    }
-    
-    autoDpEnabled = true
-
-    // 1. Run once immediately
-    await updateDP(message.client)
-
-    // 2. Set the interval
-    intervalId = setInterval(() => {
-        if (autoDpEnabled) {
-            updateDP(message.client) 
-        } else {
-            clearInterval(intervalId)
-            intervalId = null;
-        }
-    }, INTERVAL_MS)
-    
-    await message.sendReply("✅ Auto DP ENABLED. Updates every 2 minutes." + BRANDING)
 });
 
 
-// --- 2. Stop Command (.autodp off) ---
+// --- 2. Command: .setdp (Set the Prepared Image as DP and CLEAN UP) ---
 Module({
-    pattern: "autodp off",
+    pattern: 'setdp',
     fromMe: true,
-    desc: "Disable auto DP",
-    type: "utility"
+    desc: 'Sets the locally saved image (from *.getdp*) as the bot DP and deletes the file.',
+    type: 'utility'
 }, async (message) => {
-    if (!autoDpEnabled) {
-        return await message.sendReply("_Auto DP not active._")
+
+    if (!fs.existsSync(DP_FILE_PATH)) {
+        return await message.sendReply(`❌ No prepared image found. Please use *.getdp* first.`);
     }
-    
-    autoDpEnabled = false
-    clearInterval(intervalId)
-    intervalId = null
-    
-    await message.sendReply("🛑 Auto DP DISABLED." + BRANDING)
+
+    try {
+        await message.sendReply("🔄 Reading saved file and updating profile picture...");
+        
+        const botJID = message.client.user.id || message.client.user.jid; 
+        
+        if (!botJID) {
+            return await message.sendReply("❌ Could not determine bot's JID for profile update.");
+        }
+
+        // Use the stable ReadStream method for file upload
+        await message.client.updateProfilePicture(botJID, createReadStream(DP_FILE_PATH)); 
+        
+        // --- CRITICAL: AUTOMATIC CLEANUP ---
+        try {
+            await fs.promises.unlink(DP_FILE_PATH);
+            console.log(`[dp_manager] Successfully deleted used image file: ${path.basename(DP_FILE_PATH)}`);
+        } catch (cleanupError) {
+            console.error("[dp_manager] FAILED to delete file:", cleanupError);
+            // We continue, as the DP update was successful
+        }
+
+        return await message.sendReply("🎉 Profile picture successfully updated and used image file deleted!" + BRANDING);
+
+    } catch (e) {
+        console.error("Error setting DP:", e);
+        
+        // Do NOT delete the file if the update failed, in case the user wants to inspect it.
+        return await message.sendReply(`❌ Fatal error during profile picture update. Check bot console for details. ${BRANDING}`);
+    }
 });
