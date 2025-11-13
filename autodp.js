@@ -2,22 +2,18 @@
 
 const { Module } = require('../main');
 const axios = require('axios');
-const Jimp = require('jimp'); // Make sure you have installed: npm install jimp
-const fs = require('fs').promises; // For temporary file handling (optional, but safer)
+const Jimp = require('Jimp'); // Ensure JIMP is correctly capitalized or lowercase based on your npm install
+const fs = require('fs').promises;
 
 // --- Configuration and State ---
-const INTERVAL_MS = 1000 * 60 * 2; // Update every 2 minutes (adjust as needed)
-const IMAGE_API = 'https://picsum.photos/720/720'; // A reliable source for random images
-// Alternative API examples:
-// 'https://source.unsplash.com/random/720x720' // Good but might have rate limits
-// 'https://loremflickr.com/720/720' // Another random image source
+const INTERVAL_MS = 1000 * 60 * 2; // Fixed to 2 minutes (1000ms * 60s * 2min)
+const IMAGE_API = 'https://picsum.photos/720/720'; 
 
 let autoDpEnabled = false;
 let intervalId = null;
-const BRANDING = "\n\n— powered by gemini & Emmanuel"; // Including branding as requested
+const BRANDING = "\n\n— powered by gemini & Emmanuel"; 
 
 // --- Core Logic Function ---
-// Fetches a new image, processes it to 720x720, and updates the DP.
 const updateDP = async (client) => {
     try {
         if (!client) {
@@ -33,28 +29,34 @@ const updateDP = async (client) => {
 
         // 2. Process the image with Jimp
         const image = await Jimp.read(imageBuffer);
-
-        // Ensure the image is square and resize to 720x720
-        // Jimp.cover will resize and crop to fill the dimensions
-        image.cover(720, 720); 
-
-        // Convert the processed image back to a buffer (JPEG for smaller size, or PNG)
+        image.cover(720, 720); // Resize and crop to 720x720 square
         const processedImageBuffer = await image.getBufferAsync(Jimp.MIME_JPEG);
 
         // 3. Update WhatsApp Profile Picture
         if (typeof client.updateProfilePicture === "function") {
-            await client.updateProfilePicture(processedImageBuffer);
-            console.log(`[autodp] Successfully updated DP.`);
+            // CRITICAL FIX: The error is caused by missing the JID. 
+            // We pass the bot's JID and the processed image buffer.
+            const botJID = client.user.id || client.user.jid; 
+            
+            if (!botJID) {
+                console.error("[autodp] Could not find bot's JID to set profile picture.");
+                return;
+            }
+
+            await client.updateProfilePicture(botJID, processedImageBuffer); 
+            
+            console.log(`[autodp] Successfully updated DP for ${botJID.split('@')[0]}`);
         } else {
-            console.warn("[autodp] updateProfilePicture not available on client. WhatsApp client may not support this API version or method.");
+            console.warn("[autodp] updateProfilePicture not available on client.");
         }
 
     } catch (err) {
-        console.error("[autodp] Error in updating DP:", err);
-        // Optionally, send a message to the owner about the failure
-        // if (client && botConfig.OWNER_JID) {
-        //     await client.sendMessage(botConfig.OWNER_JID, { text: `❌ Auto DP update failed: ${err.message}` });
-        // }
+        // Log the full error, but suppress the 'stream' error if it's the JID issue
+        if (err.message && err.message.includes("'stream' in undefined")) {
+            console.error("[autodp] Error updating DP: JID or image buffer format likely incorrect. Retrying on next interval.");
+        } else {
+            console.error("[autodp] General Error in updating DP:", err);
+        }
     }
 };
 
@@ -62,7 +64,7 @@ const updateDP = async (client) => {
 // --- 1. Start Command (.autodp on) ---
 Module({ 
     pattern: "autodp on", 
-    fromMe: true, // Only bot owner should enable this for the bot itself
+    fromMe: true, 
     desc: "Enable auto DP updates (every 2 min)", 
     type: "utility" 
 }, async (message) => {
@@ -80,7 +82,6 @@ Module({
         if (autoDpEnabled) {
             updateDP(message.client) 
         } else {
-            // Self-cleanup for the interval
             clearInterval(intervalId)
             intervalId = null;
         }
