@@ -3,16 +3,16 @@ const config = require("../config");
 const axios = require("axios");
 
 // --- API Configuration ---
-// Imagen 4.0 is preferred for high-quality text-to-image generation.
+// Using gemini-2.5-flash-image-preview for wider availability and to avoid Imagen billing issues.
 const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
-const MODEL = "imagen-4.0-generate-001"; 
+const MODEL = "gemini-2.5-flash-image-preview"; 
 
 // --- Image Generation Function ---
 
 /**
- * Calls the Imagen API to generate an image based on the prompt.
+ * Calls the Gemini Flash Image Preview API to generate an image based on the prompt.
  * @param {string} prompt - The user's description of the desired image.
- * @returns {string|null} The base64-encoded image data, or null on error.
+ * @returns {string|null} The base64-encoded image data, or an error message string.
  */
 async function generateImage(prompt) {
     const apiKey = config.GEMINI_API_KEY;
@@ -20,18 +20,16 @@ async function generateImage(prompt) {
         return "_❌ GEMINI_API_KEY not configured. Please set it using `.setvar GEMINI_API_KEY your_api_key`_";
     }
 
-    const apiUrl = `${API_BASE_URL}${MODEL}:predict?key=${apiKey}`;
+    const apiUrl = `${API_BASE_URL}${MODEL}:generateContent?key=${apiKey}`;
 
-    // Payload structure for the Imagen 4.0 predict endpoint
     const payload = {
-        instances: [{ 
-            prompt: prompt,
-            // You can add more parameters here like 'aspectRatio' (e.g., '1:1', '16:9') 
+        contents: [{
+            parts: [{ text: prompt }]
         }],
-        parameters: {
-            "sampleCount": 1, // Requesting one image
-            "outputMimeType": "image/jpeg", // Default output format
-        }
+        generationConfig: {
+            // Request both text (optional) and image modalities
+            responseModalities: ['TEXT', 'IMAGE']
+        },
     };
 
     try {
@@ -40,11 +38,12 @@ async function generateImage(prompt) {
             timeout: 60000, // Image generation can take up to 60 seconds
         });
 
-        const predictions = response.data?.predictions;
-        
-        if (predictions && predictions.length > 0 && predictions[0].bytesBase64Encoded) {
+        // The image data is nested differently in this model's response structure
+        const base64Data = response.data?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+
+        if (base64Data) {
             // Returns the base64 string of the image
-            return predictions[0].bytesBase64Encoded;
+            return base64Data;
         } else {
             return "_❌ AI could not generate an image or the response was empty._";
         }
@@ -63,7 +62,7 @@ Module(
   {
     pattern: "image ?(.*)",
     fromMe: true, 
-    desc: "Generates an image from a text prompt using Imagen AI.",
+    desc: "Generates an image from a text prompt using Gemini AI.",
     usage: '.image A majestic robot chef baking a loaf of bread, digital art',
   },
   async (message, match) => {
@@ -90,7 +89,7 @@ Module(
     
     // Send the image buffer back to the chat
     await message.sendReply(imageBuffer, { 
-        caption: `*✨ Generated Image:*\n_${prompt}_\n\n_Powered by Gemini & Emmanuel_` 
+        caption: `*✨ Generated Image:*\n_${prompt}_\n\n_Powered by Gemini_` 
     }, 'image');
   }
 );
