@@ -39,7 +39,7 @@ Module({
         // Prepare the API payload
         const payload = {
             contents: [{ parts: [{ text: msgText }] }],
-            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] }],
             // Adding a max token limit helps ensure the response is short
             config: {
                 maxOutputTokens: 50 
@@ -83,3 +83,6 @@ Module({
         // await message.sendReply("I'm having a brief connection issue, try again in a moment!");
     }
 });
+```eof
+
+**Action:** After saving this, **restart your bot** one last time to make the new API key active.
