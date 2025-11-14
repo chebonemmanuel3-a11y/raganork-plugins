@@ -4,7 +4,6 @@ const axios = require("axios");
 
 // --- API Configuration ---
 const API_BASE_URL = "[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/)";
-// We use the model that supports Google Search Grounding for real-time information
 const MODEL = "gemini-2.5-flash-preview-09-2025";
 
 
@@ -15,23 +14,24 @@ const MODEL = "gemini-2.5-flash-preview-09-2025";
  */
 async function getSongLyrics(songQuery) {
     const apiKey = config.GEMINI_API_KEY;
+    
+    // Check if API key is present before proceeding
     if (!apiKey) {
         return "_❌ GEMINI_API_KEY not configured. Please set it using `.setvar GEMINI_API_KEY your_api_key`_";
     }
 
     // --- API Setup for Google Search Grounding ---
-    // The model uses the Google Search tool to find the information
     const apiUrl = `${API_BASE_URL}${MODEL}:generateContent?key=${apiKey}`;
 
     const userQuery = `Find the complete, accurate lyrics for the song: "${songQuery}". Format the lyrics clearly with stanza breaks. Do not include any introductory or concluding text, only the lyrics themselves, followed by the source citations.`;
 
-    // UPDATED: Added instruction to NOT use markdown code blocks
+    // System instruction includes a directive not to use markdown blocks
     const systemPrompt = "You are a specialized lyrics retrieval assistant. Your primary function is to extract and present song lyrics based on the user's query and the grounded search results. Present the output in a clean, easy-to-read format. **Do not wrap the lyrics in markdown code blocks (i.e., do not use ```).**";
 
     const payload = {
         contents: [{ parts: [{ text: userQuery }] }],
 
-        // IMPORTANT: Enable Google Search grounding
+        // Enable Google Search grounding
         tools: [{ "google_search": {} }],
 
         systemInstruction: {
@@ -39,7 +39,7 @@ async function getSongLyrics(songQuery) {
         },
         generationConfig: {
             temperature: 0.1,
-            maxOutputTokens: 2048, // Generous tokens for full song lyrics
+            maxOutputTokens: 2048,
         }
     };
 
@@ -58,10 +58,10 @@ async function getSongLyrics(songQuery) {
         let text = candidate.content?.parts?.[0]?.text;
 
         if (!text) {
-             return "_❌ Error: Could not extract lyrics text._";
+             return "_❌ Error: Could not extract lyrics text. The model may have failed to find the lyrics._";
         }
         
-        // NEW FIX: Strip markdown code fences if they were accidentally included by the model
+        // FIX: Strip markdown code fences if they were accidentally included by the model
         text = text.replace(/```[a-z]*\n/g, '').replace(/\n```/g, '').trim();
 
 
@@ -86,11 +86,14 @@ async function getSongLyrics(songQuery) {
         return `*🎶 Lyrics for: ${songQuery} 🎶*\n\n${text}${formattedSources}`;
 
     } catch (error) {
+        // More descriptive network error reporting
         console.error("Lyrics retrieval error:", error.message);
         if (error.response) {
-            return `_❌ API Error: ${error.response.data?.error?.message || "Unknown API error"}_`;
+            // This happens if the API key is invalid or request is malformed
+            return `_❌ API Error (${error.response.status}): ${error.response.data?.error?.message || "Unknown API error"}_`;
         }
-        return "_❌ Network error. Please check your API key and retry._";
+        // This is a true network error (e.g., DNS, timeout)
+        return "_❌ Network error. Please check your internet connection or confirm your API key is valid._";
     }
 }
 
@@ -99,7 +102,6 @@ async function getSongLyrics(songQuery) {
 
 Module(
     {
-        // Pattern to capture the song query after .lyrics
         pattern: "lyrics (.*)",
         fromMe: true,
         desc: "Retrieves song lyrics using Gemini AI with Google Search grounding.",
