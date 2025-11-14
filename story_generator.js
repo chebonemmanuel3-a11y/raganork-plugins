@@ -56,14 +56,14 @@ async function generateStory(prompt) {
 }
 
 
-// --- Command Module Definition (.story) ---
+// --- Command Module Definition (.stry) ---
 
 Module(
     {
-        pattern: "story(.*)",
+        pattern: "stry(.*)",
         fromMe: true,
         desc: "Generates a short, creative story based on your prompt.",
-        usage: '.story [your theme or prompt]',
+        usage: '.stry [your theme or prompt]',
     },
     async (message, match) => {
         const prompt = match[1]?.trim();
@@ -73,8 +73,8 @@ Module(
             return await message.sendReply(
                 `📖 *Story Generator:*\n\n` +
                 `To generate a story, use the command followed by a theme, character, or setting.\n\n` +
-                `*Usage Example 1:* \`.story a shy wizard who discovers a magical harmonica\`` +
-                `\n*Usage Example 2:* \`.story The last orange on a dying tree\``
+                `*Usage Example 1:* \`.stry a shy wizard who discovers a magical harmonica\`` +
+                `\n*Usage Example 2:* \`.stry The last orange on a dying tree\``
             );
         }
 
