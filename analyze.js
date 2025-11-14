@@ -3,36 +3,33 @@ const config = require("../config");
 const axios = require("axios");
 
 // --- API Configuration ---
+// Using the model you specified.
 const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
-const MODEL = "gemini-2.5-flash-preview-09-2025"; 
+const MODEL = "gemini-2.5-flash";
 
-// --- Analysis Schema Definition ---
-// This schema forces the Gemini model to return a structured analysis object.
-const ANALYSIS_SCHEMA = {
+// --- JSON Schema Definition (Ensures structured analysis) ---
+const analysisSchema = {
     type: "OBJECT",
     properties: {
-        "sentiment": { "type": "STRING", "description": "The primary sentiment or tone of the message (e.g., Positive, Negative, Neutral, Confused, Urgent)." },
-        "intention": { "type": "STRING", "description": "The core purpose of the message (e.g., Information Request, Statement, Command, Social Greeting, Complaint)." },
-        "keyTopics": {
+        "topicSummary": { "type": "STRING", "description": "A concise summary of the message's main topic or intent." },
+        "sentiment": { "type": "STRING", "description": "The overall sentiment, strictly categorized as 'Positive', 'Negative', 'Neutral', or 'Mixed'." },
+        "responseSuggestion": { "type": "STRING", "description": "A brief, appropriate suggestion for a human response." },
+        "keywords": {
             "type": "ARRAY",
             "items": { "type": "STRING" },
-            "description": "A list of 2-4 primary subjects or topics mentioned in the message."
-        },
-        "summary": { "type": "STRING", "description": "A concise, single-sentence summary of the message content." }
+            "description": "3 to 5 key terms from the message."
+        }
     },
-    // Ensure all these fields are present in the final JSON object
-    required: ["sentiment", "intention", "keyTopics", "summary"]
+    "propertyOrdering": ["topicSummary", "sentiment", "responseSuggestion", "keywords"]
 };
 
 
-// --- Message Analysis Function ---
-
 /**
- * Analyzes a given message text using the Gemini API to provide structured analysis.
- * @param {string} messageText - The text content of the message to analyze.
+ * Analyzes the text content using the Gemini API and returns structured JSON.
+ * @param {string} textToAnalyze - The message text to be analyzed.
  * @returns {object|string} The parsed analysis object or an error message.
  */
-async function analyzeMessage(messageText) {
+async function analyzeMessage(textToAnalyze) {
     const apiKey = config.GEMINI_API_KEY;
     if (!apiKey) {
         return "_❌ GEMINI_API_KEY not configured. Please set it using `.setvar GEMINI_API_KEY your_api_key`_";
@@ -40,20 +37,24 @@ async function analyzeMessage(messageText) {
 
     const apiUrl = `${API_BASE_URL}${MODEL}:generateContent?key=${apiKey}`;
 
-    const userQuery = `Analyze the following user message: "${messageText}". Provide the analysis strictly in the requested JSON format.`;
+    const userQuery = `Analyze the following WhatsApp message strictly according to the provided JSON schema.`;
 
     const payload = {
-        contents: [{ parts: [{ text: userQuery }] }],
+        contents: [{
+            parts: [
+                { text: userQuery },
+                { text: `\n\n--- Message to Analyze ---\n${textToAnalyze}` }
+            ]
+        }],
         generationConfig: {
             // Mandate JSON output
             responseMimeType: "application/json",
-            responseSchema: ANALYSIS_SCHEMA,
-            maxOutputTokens: 1024,
-            temperature: 0.2, // Lower temperature for more objective analysis
+            responseSchema: analysisSchema,
+            maxOutputTokens: 512,
+            temperature: 0.2,
         },
-        // System instruction to guide the model's persona
         systemInstruction: {
-            parts: [{ text: "You are a sophisticated text analyzer specializing in chat communication. Your analysis must be objective and strictly follow the JSON schema." }]
+            parts: [{ text: "You are a professional message sentiment and topic analyst. Your analysis must be purely in the requested JSON format." }]
         },
     };
 
@@ -63,18 +64,20 @@ async function analyzeMessage(messageText) {
             timeout: 15000,
         });
 
-        // Extract the JSON string from the response
         const jsonString = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (jsonString) {
-            // Attempt to parse the JSON
-            const analysis = JSON.parse(jsonString);
-            // Basic validation to ensure the schema was respected
-            if (analysis.sentiment && analysis.keyTopics && Array.isArray(analysis.keyTopics)) {
-                return analysis;
-            } else {
-                return "_❌ AI generated incomplete data. Try refining the analysis request._";
+            // Attempt to clean and parse the JSON, handling common errors like extra markdown wrappers
+            let cleanJsonString = jsonString.trim();
+            if (cleanJsonString.startsWith('```json')) {
+                cleanJsonString = cleanJsonString.substring(7);
             }
+            if (cleanJsonString.endsWith('```')) {
+                cleanJsonString = cleanJsonString.substring(0, cleanJsonString.length - 3);
+            }
+
+            const analysis = JSON.parse(cleanJsonString);
+            return analysis;
         } else {
             return "_❌ AI could not generate a valid JSON analysis. Try a different message._";
         }
@@ -90,48 +93,50 @@ async function analyzeMessage(messageText) {
 // --- Command Module Definition (.analyze) ---
 
 Module(
-  {
-    pattern: "analyze ?(.*)",
-    fromMe: true,
-    desc: "Analyzes the sentiment, intention, and key topics of a message using Gemini AI.",
-    usage: '.analyze Can you believe how fast the markets are moving today? I need to check my crypto portfolio ASAP.',
-  },
-  async (message, match) => {
-    // Determine the text to analyze:
-    // 1. Check if the user replied to a message. If so, use that text.
-    // 2. Otherwise, use the text provided after the command.
-    const commandText = match[1]?.trim();
-    const quotedText = message.quoted?.text;
-    
-    // Prioritize quoted text, otherwise use command text
-    const textToAnalyze = quotedText || commandText;
+    {
+        // CHANGE 1: Allow optional text after the command using ?(.*)
+        pattern: "analyze ?(.*)",
+        fromMe: true,
+        desc: "Analyzes the sentiment and topic of a message using Gemini AI. Works via reply or direct text.",
+        usage: 'Reply to any message with `.analyze` OR type `.analyze [your text here]`',
+    },
+    async (message, match) => {
+        // Text provided directly after the command
+        const commandText = match[1]?.trim();
 
-    if (!textToAnalyze) {
-      return await message.sendReply(
-        `_Please provide a message to analyze or reply to a message!_\n\n` +
-        `*Usage:* \`.analyze This is some text to analyze.\` or *reply* to a message with \`.analyze\``
-      );
+        // Text from the replied message (using the property you confirmed works)
+        const replyText = message.reply_message?.text;
+
+        // CHANGE 2: Prioritize the reply text, then fallback to the command text
+        const textToAnalyze = replyText || commandText;
+
+        if (!textToAnalyze) {
+            // Updated error message to reflect dual usage
+            return await message.sendReply(
+                `_Please provide a message to analyze or reply to a message!_\n\n` +
+                `*Usage:* \`.analyze This is some text to analyze.\` or *reply* to a message with \`.analyze\``
+            );
+        }
+
+        // Shorten the message for the loading indicator
+        const previewText = textToAnalyze.length > 50 ? textToAnalyze.substring(0, 50) + "..." : textToAnalyze;
+        await message.sendReply(`_Analyzing: "${previewText}" using structured output..._`);
+
+        const analysisResult = await analyzeMessage(textToAnalyze);
+
+        // If the result is a string, it's an error message
+        if (typeof analysisResult === 'string') {
+            return await message.sendReply(analysisResult);
+        }
+
+        // Format the successful JSON analysis into a readable WhatsApp message
+        const formattedResult =
+            `*💬 Message Analysis (Gemini AI) 📊*\n\n` +
+            `*📈 Sentiment:* ${analysisResult.sentiment}\n` +
+            `*💡 Topic Summary:* ${analysisResult.topicSummary}\n\n` +
+            `*🔑 Keywords:* ${analysisResult.keywords.join(', ')}\n\n` +
+            `*✍️ Suggested Response:* _${analysisResult.responseSuggestion}_`;
+
+        return await message.sendReply(formattedResult);
     }
-
-    await message.sendReply(`_Analyzing message: "${textToAnalyze.substring(0, 50)}..."_`);
-
-    const analysisResult = await analyzeMessage(textToAnalyze);
-
-    // If the result is a string, it's an error message
-    if (typeof analysisResult === 'string') {
-        return await message.sendReply(analysisResult);
-    }
-
-    // Format the successful JSON analysis into a readable message
-    const analysisMessage = 
-        `*🧠 Message Analysis Results 💬*\n\n` +
-        `*📝 Original Message Summary:*\n${analysisResult.summary}\n\n` +
-        `*📊 Data Points:*\n` +
-        `• *Sentiment:* ${analysisResult.sentiment}\n` +
-        `• *Intention:* ${analysisResult.intention}\n\n` +
-        `*🏷️ Key Topics:*\n` +
-        analysisResult.keyTopics.map((topic, index) => `• ${topic}`).join('\n');
-
-    return await message.sendReply(analysisMessage);
-  }
 );
