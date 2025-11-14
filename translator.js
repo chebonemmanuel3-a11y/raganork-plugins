@@ -100,26 +100,29 @@ Module(
         const fullInput = match[1]?.trim() || '';
         const args = fullInput.split(/\s+/).filter(a => a.length > 0);
 
-        // --- FIX: Ensure repliedTo is valid before accessing properties ---
+        // --- IMPROVED FIX: Ensure repliedTo exists and has text, and simplify argument parsing ---
+        // This explicitly checks that message.repliedTo.text is a string before accessing it, 
+        // which prevents the JID object from being processed as a string, fixing the error.
         const repliedToText = (message.repliedTo && typeof message.repliedTo.text === 'string' && message.repliedTo.text.trim().length > 0) 
             ? message.repliedTo.text.trim() 
             : null;
 
-        // Determine translation mode (Reply or Inline)
+        // Case 1: Reply translation: .trans <language> (e.g., .trans sw)
         if (repliedToText && args.length === 1) {
-            // Case 1: Reply translation: .trans <language>
             sourceText = repliedToText;
             targetLanguageAlias = args[0].toLowerCase();
             originalTextContext = `_Original Text (via reply):_ "${repliedToText.substring(0, Math.min(repliedToText.length, 50))}..."`;
 
-        } else if (args.length >= 2) {
-            // Case 2: Inline translation: .trans <text> <language>
+        } 
+        // Case 2: Inline translation: .trans <text> <language> (e.g., .trans my mother sw)
+        else if (args.length >= 2) {
             targetLanguageAlias = args[args.length - 1].toLowerCase();
             sourceText = args.slice(0, args.length - 1).join(' ');
             originalTextContext = `_Original Text (inline):_ "${sourceText.substring(0, Math.min(sourceText.length, 50))}..."`;
 
-        } else {
-            // Invalid usage: show help text
+        } 
+        // Invalid usage or only one word provided without reply
+        else {
             return await message.sendReply(
                 `❌ **Invalid Usage.** Use: \`.trans <text> <lang>\` or reply to a message with \`.trans <lang>\`.\n\n` +
                 `**Supported Language Codes:** ${SUPPORTED_LANGS}\n` +
