@@ -3,7 +3,7 @@ const config = require("../config");
 const axios = require("axios");
 
 // --- API Configuration ---
-const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
+const API_BASE_URL = "[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/)";
 // We use the model that supports Google Search Grounding for real-time information
 const MODEL = "gemini-2.5-flash-preview-09-2025";
 
@@ -25,7 +25,8 @@ async function getSongLyrics(songQuery) {
 
     const userQuery = `Find the complete, accurate lyrics for the song: "${songQuery}". Format the lyrics clearly with stanza breaks. Do not include any introductory or concluding text, only the lyrics themselves, followed by the source citations.`;
 
-    const systemPrompt = "You are a specialized lyrics retrieval assistant. Your primary function is to extract and present song lyrics based on the user's query and the grounded search results. Present the output in a clean, easy-to-read format.";
+    // UPDATED: Added instruction to NOT use markdown code blocks
+    const systemPrompt = "You are a specialized lyrics retrieval assistant. Your primary function is to extract and present song lyrics based on the user's query and the grounded search results. Present the output in a clean, easy-to-read format. **Do not wrap the lyrics in markdown code blocks (i.e., do not use ```).**";
 
     const payload = {
         contents: [{ parts: [{ text: userQuery }] }],
@@ -54,7 +55,15 @@ async function getSongLyrics(songQuery) {
              return "_❌ Error: Could not retrieve a response from the API. The song might be too obscure or the query format is invalid._";
         }
 
-        const text = candidate.content?.parts?.[0]?.text || "_❌ Error: Could not extract lyrics text._";
+        let text = candidate.content?.parts?.[0]?.text;
+
+        if (!text) {
+             return "_❌ Error: Could not extract lyrics text._";
+        }
+        
+        // NEW FIX: Strip markdown code fences if they were accidentally included by the model
+        text = text.replace(/```[a-z]*\n/g, '').replace(/\n```/g, '').trim();
+
 
         // --- Source Extraction ---
         let sources = [];
