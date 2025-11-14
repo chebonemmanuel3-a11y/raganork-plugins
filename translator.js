@@ -1,22 +1,16 @@
 // --- REQUIRED MODULES AND CONFIGURATION ---
-// These files are assumed to exist in your bot's framework based on your input structure.
-const { Module } = require("../main"); 
-const config = require("../config"); 
+// Ensures compatibility with your existing module framework
+const { Module } = require("../main");
+const config = require("../config");
 const axios = require("axios");
 
 // --- API Configuration ---
 const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
 const MODEL = "gemini-2.5-flash-preview-09-2025";
 const GENERATE_CONTENT_ENDPOINT = ":generateContent";
-const API_URL = `${API_BASE_URL}${MODEL}${GENERATE_CONTENT_ENDPOINT}`;
-
-// The API key is assumed to be stored in your configuration file.
-const API_KEY = config.GEMINI_API_KEY; 
-if (!API_KEY) {
-    console.error("CRITICAL: GEMINI_API_KEY is not defined in the config file. Translator will fail.");
-}
 
 // --- Language Aliases ---
+// Includes support for Kiswahili and Sheng (Nairobi Slang)!
 const languageMap = {
     'en': 'English',
     'sw': 'Kiswahili',
@@ -24,28 +18,37 @@ const languageMap = {
     'fr': 'French',
     'es': 'Spanish',
     'de': 'German',
+    'it': 'Italian',
     'pt': 'Portuguese',
     'ko': 'Korean',
     'jp': 'Japanese',
-    // Add more language aliases as needed
+    'zh': 'Chinese (Mandarin)',
+    'hi': 'Hindi',
 };
+// Generate the list of supported codes for the usage message
+const SUPPORTED_LANGS = Object.keys(languageMap).map(alias => `\`${alias}\``).join(', ');
 
 
 /**
  * Performs the translation API call using Axios, implementing exponential backoff for retries.
  * @param {string} sourceText The text to be translated.
- * @param {string} targetLanguage The resolved target language name.
+ * @param {string} targetLanguage The resolved target language name (e.g., 'Kiswahili').
  * @returns {Promise<string>} The translated text.
  */
 async function callGeminiTranslation(sourceText, targetLanguage) {
-    if (!API_KEY) {
-        throw new Error("API Key is missing. Please check your config file.");
+    // Check for API Key configured in your environment
+    const apiKey = config.GEMINI_API_KEY;
+    if (!apiKey) {
+        throw new Error("GEMINI_API_KEY is missing in config. Cannot proceed with translation.");
     }
-    
+
+    const apiUrl = `${API_BASE_URL}${MODEL}${GENERATE_CONTENT_ENDPOINT}?key=${apiKey}`;
+
+    // System instruction to ensure high-quality, raw translation output
     const systemPrompt = `You are an expert, multilingual translator. 
         Translate the provided text into the target language: ${targetLanguage}.
-        If the target language is Sheng, use modern, witty Nairobi slang and provide only the translation.
-        Provide only the raw translated text as your output, without any introductory phrases, explanations, or labels (e.g., do not say "The translation is...").`;
+        If the target language is a specific dialect or slang (like Sheng), use modern, appropriate, and witty expressions for that language.
+        Provide only the raw translated text as your output, without any introductory phrases, explanations, or labels.`;
 
     const userQuery = `Translate the following text: "${sourceText}"`;
 
@@ -53,7 +56,7 @@ async function callGeminiTranslation(sourceText, targetLanguage) {
         contents: [{ parts: [{ text: userQuery }] }],
         systemInstruction: {
             parts: [{ text: systemPrompt }]
-        }
+        },
     };
 
     let attempts = 0;
@@ -63,100 +66,103 @@ async function callGeminiTranslation(sourceText, targetLanguage) {
     while (attempts < MAX_ATTEMPTS) {
         attempts++;
         try {
-            const response = await axios.post(
-                API_URL, 
-                payload, 
-                {
-                    // Pass the API key as a query parameter for authentication
-                    params: { key: API_KEY } 
-                }
-            );
-            
+            const response = await axios.post(apiUrl, payload, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 20000, // 20 seconds timeout
+            });
+
             const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
             if (text) {
-                return text;
+                return text.trim();
             }
-            throw new Error("API response was successful but contained no text.");
+            // If API call succeeds but returns no text, treat it as an internal error.
+            throw new Error("API response was successful but contained no text in the expected format.");
         } catch (error) {
             finalError = error;
-            // Handle rate limiting (429) with exponential backoff
-            if (error.response && error.response.status === 429 && attempts < MAX_ATTEMPTS) {
+            // Exponential backoff logic for rate limiting (429) and network issues
+            if (((error.response && error.response.status === 429) || error.code === 'ECONNABORTED') && attempts < MAX_ATTEMPTS) {
                 const delay = Math.pow(2, attempts) * 1000;
                 await new Promise(resolve => setTimeout(resolve, delay));
             } else {
-                // Exit loop on other errors or max attempts
                 break;
             }
         }
     }
-    
+
     // Throw the final error if all attempts failed
     const errorDetails = finalError.response ? JSON.stringify(finalError.response.data.error || finalError.response.data) : finalError.message;
     throw new Error(`Translation API call failed after ${attempts} attempts. Details: ${errorDetails}`);
 }
 
 
-/**
- * Defines and exports the .trans command structure for the bot.
- */
-module.exports = new Module({
-    name: "Translator",
-    cmd: "trans",
-    desc: "Contextual language translation using Gemini.",
-    usage: "<text> <lang> | <lang> (when replying to a message)",
-    
-    // The main execution function for the command
-    async exec({ message, args }) {
+// --- Command Module Definition (.trans) ---
+Module(
+    {
+        pattern: "trans(.*)",
+        fromMe: true, // Only responds to messages from the bot's owner
+        desc: "Contextual language translation using Gemini.",
+        usage: '.trans <text> <lang> | (reply) .trans <lang>',
+    },
+    async (message, match) => {
         let sourceText = '';
         let targetLanguageAlias = '';
         let originalTextContext = '';
 
-        // Check for replied-to message content. Assuming 'message.repliedTo' holds the message object.
+        const fullInput = match[1]?.trim() || '';
+        const args = fullInput.split(/\s+/).filter(a => a.length > 0);
+
+        // Check for replied-to message content.
         const repliedToText = message.repliedTo && message.repliedTo.text ? message.repliedTo.text.trim() : null;
 
+        // Determine translation mode (Reply or Inline)
         if (repliedToText && args.length === 1) {
             // Case 1: Reply translation: .trans <language>
             sourceText = repliedToText;
             targetLanguageAlias = args[0].toLowerCase();
-            originalTextContext = `_Original Text (via reply):_ "${repliedToText}"`;
+            originalTextContext = `_Original Text (via reply):_ "${repliedToText.substring(0, Math.min(repliedToText.length, 50))}..."`;
 
         } else if (args.length >= 2) {
             // Case 2: Inline translation: .trans <text> <language>
             targetLanguageAlias = args[args.length - 1].toLowerCase();
             // The rest of the arguments are the source text
             sourceText = args.slice(0, args.length - 1).join(' ');
-            originalTextContext = `_Original Text (inline):_ "${sourceText}"`;
-            
+            originalTextContext = `_Original Text (inline):_ "${sourceText.substring(0, Math.min(sourceText.length, 50))}..."`;
+
         } else {
-            // Invalid usage
-            const availableLangs = Object.keys(languageMap).map(alias => `\`${alias}\``).join(', ');
-            return message.reply(`❌ **Invalid Usage.** Use: \`.trans <text> <lang>\` or reply with \`.trans <lang>\`.\n**Supported Codes:** ${availableLangs}`);
+            // Invalid usage: show help text
+            return await message.sendReply(
+                `❌ **Invalid Usage.** Use: \`.trans <text> <lang>\` or reply to a message with \`.trans <lang>\`.\n\n` +
+                `**Supported Language Codes:** ${SUPPORTED_LANGS}\n` +
+                `_Example: .trans hello world sw_`
+            );
         }
 
         if (!sourceText) {
-            return message.reply("❌ **Error:** I couldn't find any text to translate.");
+            return await message.sendReply("❌ **Error:** I couldn't find any text to translate.");
         }
-        
-        // Resolve the target language name
+
+        // Resolve the target language name (e.g., 'sw' -> 'Kiswahili')
         const targetLanguage = languageMap[targetLanguageAlias] || targetLanguageAlias;
 
+        // Send a temporary "processing" message
+        const waitingMessage = await message.sendReply(`🌍 _Translating to *${targetLanguage}*..._`);
+
         try {
-            // You can add a 'message.typing()' or 'message.sendProcessing()' here if your bot supports it.
-            
             const translation = await callGeminiTranslation(sourceText, targetLanguage);
-            
+
             // Construct the final reply message
-            const responseMessage = 
+            const responseMessage =
                 `${originalTextContext}\n\n` +
-                `**[Translation to ${targetLanguage}]**\n` +
+                `*✅ Translation to ${targetLanguage}*\n` +
                 `> ${translation}`;
-            
-            return message.reply(responseMessage);
+
+            // Edit the temporary message to show the result
+            return await message.edit(responseMessage, waitingMessage.key);
 
         } catch (error) {
             console.error("TRANSLATION MODULE ERROR:", error.message);
-            // Provide a friendly error message to the user
-            return message.reply(`❌ **Translation Failed:** Could not complete the request. Details: ${error.message.substring(0, 100)}...`);
+            // Edit the temporary message to show the error
+            return await message.edit(`❌ **Translation Failed:** ${error.message.substring(0, 100)}...`, waitingMessage.key);
         }
     }
-});
+);
