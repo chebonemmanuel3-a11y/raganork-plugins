@@ -97,14 +97,19 @@ Module(
     usage: '.analyze Can you believe how fast the markets are moving today? I need to check my crypto portfolio ASAP.',
   },
   async (message, match) => {
-    // We expect the text to analyze to be either the text after the command (.analyze text) 
-    // or the text of a replied message.
-    const textToAnalyze = match[1]?.trim() || message.quoted?.text;
+    // Determine the text to analyze:
+    // 1. Check if the user replied to a message. If so, use that text.
+    // 2. Otherwise, use the text provided after the command.
+    const commandText = match[1]?.trim();
+    const quotedText = message.quoted?.text;
+    
+    // Prioritize quoted text, otherwise use command text
+    const textToAnalyze = quotedText || commandText;
 
     if (!textToAnalyze) {
       return await message.sendReply(
         `_Please provide a message to analyze or reply to a message!_\n\n` +
-        `*Usage:* \`.analyze This is some text to analyze.\``
+        `*Usage:* \`.analyze This is some text to analyze.\` or *reply* to a message with \`.analyze\``
       );
     }
 
